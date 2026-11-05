@@ -1,0 +1,17 @@
+{
+  "name": "전국 전시 달력",
+  "short_name": "전시달력",
+  "description": "전국 미술 전시의 진행·예정 일정을 달력으로 보고 안내·예매 사이트로 바로 이동합니다.",
+  "lang": "ko",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f3ec",
+  "theme_color": "#1f1b18",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>전국 전시 달력</title>
+  <meta name="description" content="전국 미술 전시의 진행·예정 일정을 달력으로 확인하세요.">
+  <meta name="theme-color" content="#1f1b18">
+  <meta property="og:title" content="전국 전시 달력">
+  <meta property="og:description" content="지금 하는 전시와 곧 열릴 전시를 달력으로 한눈에">
+  <meta property="og:image" content="icons/icon-512.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>전시 달력</h1>
+      <p id="updated">불러오는 중…</p>
+    </div>
+    <button id="todayBtn" class="ghost" type="button">오늘</button>
+  </header>
+
+  <section class="filters" aria-label="전시 필터">
+    <input id="search" type="search" placeholder="전시명, 작가, 장소 검색" autocomplete="off" enterkeyhint="search">
+    <div id="regions" class="chips" role="group" aria-label="지역"></div>
+    <div class="chips" role="group" aria-label="조건">
+      <button class="chip toggle" data-toggle="free" type="button" aria-pressed="false">무료</button>
+      <button class="chip toggle" data-toggle="ticket" type="button" aria-pressed="false">예매 가능</button>
+      <button class="chip toggle" data-toggle="museum" type="button" aria-pressed="false">박물관 전시 포함</button>
+    </div>
+  </section>
+
+  <section class="calendar" aria-label="전시 달력">
+    <div class="month-nav">
+      <button id="prevMonth" type="button" aria-label="이전 달">‹</button>
+      <h2 id="monthLabel" aria-live="polite"></h2>
+      <button id="nextMonth" type="button" aria-label="다음 달">›</button>
+    </div>
+    <div class="weekdays" aria-hidden="true">
+      <span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span>
+    </div>
+    <div id="grid" class="grid"></div>
+    <p class="legend"><span class="mark start">시작</span> 그날 시작 <span class="mark end">마감</span> 그날 종료 · 진할수록 전시가 많아요</p>
+  </section>
+
+  <section class="results">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="day" type="button"></button>
+      <button class="tab" role="tab" data-tab="ending" type="button">곧 마감</button>
+      <button class="tab" role="tab" data-tab="upcoming" type="button">예정 전시</button>
+    </div>
+    <p id="listTitle" class="list-title"></p>
+    <ul id="list" class="list"></ul>
+    <button id="more" class="more" type="button" hidden>더 보기</button>
+  </section>
+
+  <footer class="foot">
+    정보 출처: <a href="https://www.culture.go.kr" target="_blank" rel="noopener">문화포털</a>,
+    <a href="https://www.mmca.go.kr" target="_blank" rel="noopener">국립현대미술관</a>.
+    일정은 바뀔 수 있으니 방문 전 공식 안내를 확인하세요.
+  </footer>
+
+  <div id="sheetBack" class="sheet-back" hidden></div>
+  <article id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden></article>
+
+  <aside id="install" class="install" hidden>
+    <img src="icons/icon-192.png" alt="" width="44" height="44">
+    <div>
+      <strong>휴대폰에 앱으로 설치</strong>
+      <p id="installText">홈 화면에서 바로 열 수 있어요.</p>
+    </div>
+    <button id="installBtn" type="button">설치</button>
+    <button id="installClose" class="x" type="button" aria-label="닫기">×</button>
+  </aside>
+
+  <div id="gate" class="gate" hidden>
+    <div class="gate-card">
+      <img src="icons/icon-192.png" alt="" width="72" height="72">
+      <h2>크롬에서 열어 주세요</h2>
+      <p>카카오톡 안에서는 앱을 설치할 수 없어요. 크롬으로 자동 이동합니다.</p>
+      <a id="gateChrome" class="gate-btn" href="#">크롬으로 열기</a>
+      <p class="gate-help">열리지 않으면 화면 오른쪽 아래 <b>⋮</b> 메뉴에서<br><b>다른 브라우저로 열기</b>를 누르고 Chrome을 고르세요.</p>
+      <button id="gateSkip" class="gate-skip" type="button">설치 없이 여기서 보기</button>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
