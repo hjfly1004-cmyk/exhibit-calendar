@@ -30,6 +30,9 @@ jobs:
       - name: 전시 정보 수집
         continue-on-error: true
         run: node scripts/collect.mjs
+        env:
+          CULTURE_API_KEY: ${{ secrets.CULTURE_API_KEY }}
+          SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
       - name: 수집 결과 저장
         run: |
           git config user.name "github-actions[bot]"

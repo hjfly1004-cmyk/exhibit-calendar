@@ -165,13 +165,120 @@ for (const c of live) {
 }
 
 // 같은 전시가 양쪽에 있으면 예매 링크가 정확한 국립현대미술관 항목을 남긴다.
-const key = (t) => t.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+const key = (t) => t.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 let official = [];
 try { official = await mmca(); } catch (e) { console.warn('국립현대미술관 수집 실패', e.message); }
 official = official.filter((e) => e.end >= today);
 const taken = new Set(official.map((e) => key(e.title)));
-const all = [...items.filter((e) => !taken.has(key(e.title))), ...official]
-  .sort((a, b) => a.end.localeCompare(b.end));
+let all = [...items.filter((e) => !taken.has(key(e.title))), ...official];
+
+// 인증키가 있는 API로 목록에 없는 전시만 덧붙인다. 실패해도 기존 수집 결과는 유지한다.
+const isoDate = (s = '') => {
+  const m = String(s).match(/(20\d{2})-?(\d{2})-?(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+};
+const xmlTags = (xml) => Object.fromEntries([...xml.matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g)]
+  .map((m) => [m[1], decode(m[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'))]));
+
+async function cultureApi(apiKey) {
+  const k = apiKey.includes('%') ? apiKey : encodeURIComponent(apiKey);
+  const api = 'https://apis.data.go.kr/B553457/cultureinfo';
+  const out = [];
+  for (let page = 1; page <= 30; page++) {
+    const q = `serviceKey=${k}&PageNo=${page}&numOfrows=100&serviceTp=A&realmCode=D000&from=${today.replaceAll('-', '')}&to=${future}`;
+    const xml = await get(`${api}/realm2?${q}`);
+    const rows = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => xmlTags(m[1]));
+    if (page === 1) {
+      console.log('한눈에 API 응답', xml.match(/<resultCode>[^<]*|<totalCount>[^<]*/g), '항목', Object.keys(rows[0] || {}).join(','));
+    }
+    if (!rows.length) break;
+    for (const r of rows) {
+      const start = isoDate(r.startDate), end = isoDate(r.endDate);
+      if (!r.title || !start || !end) continue;
+      out.push({
+        id: `kcisa-${r.seq}`, title: r.title, start, end, place: r.place || '',
+        region: normRegion(r.area || r.sido || ''), free: false, phone: '',
+        image: (r.thumbnail || '').replace(/^http:/, 'https:'), links: [], hours: '', fee: '',
+        seq: r.seq, source: VIEW + r.seq,
+      });
+    }
+    await sleep(DELAY);
+  }
+  return out;
+}
+
+async function cultureDetail(apiKey, e) {
+  const old = prev.get(e.id);
+  if (old?.links?.length) return { ...e, links: old.links, phone: old.phone, fee: old.fee };
+  const k = apiKey.includes('%') ? apiKey : encodeURIComponent(apiKey);
+  const xml = await get(`https://apis.data.go.kr/B553457/cultureinfo/detail2?serviceKey=${k}&seq=${e.seq}`);
+  const d = xmlTags(xml.match(/<item>([\s\S]*?)<\/item>/)?.[1] || '');
+  await sleep(DELAY);
+  const url = d.url || d.placeUrl || '';
+  return {
+    ...e, phone: d.phone || '', fee: d.price || '', free: /무료/.test(d.price || ''),
+    links: /^https?:\/\//.test(url) ? [{ label: '공식 홈페이지', url }] : [],
+  };
+}
+
+async function seoulApi(apiKey) {
+  const out = [];
+  for (let from = 1; from <= 5000; from += 1000) {
+    const text = await get(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(apiKey)}/json/culturalEventInfo/${from}/${from + 999}/${encodeURIComponent('전시/미술')}/`);
+    const body = JSON.parse(text).culturalEventInfo;
+    if (from === 1) console.log('서울 API 응답', body?.RESULT?.CODE, body?.list_total_count);
+    if (!body?.row?.length) break;
+    for (const r of body.row) {
+      const start = isoDate(r.STRTDATE), end = isoDate(r.END_DATE);
+      if (!r.TITLE || !start || !end) continue;
+      const links = /^https?:\/\//.test(r.ORG_LINK || '') ? [{ label: '공식 홈페이지', url: r.ORG_LINK }] : [];
+      const detailUrl = /^https?:\/\//.test(r.HMPG_ADDR || '') ? r.HMPG_ADDR : '';
+      if (!links.length && detailUrl) links.push({ label: '공식 홈페이지', url: detailUrl });
+      out.push({
+        id: `seoul-${key(r.TITLE).slice(0, 40)}-${start}`, title: decode(r.TITLE), start, end,
+        place: decode(r.PLACE || ''), region: '서울', free: r.IS_FREE === '무료', phone: decode(r.INQUIRY || ''),
+        image: (r.MAIN_IMG || '').replace(/^http:/, 'https:'), links, hours: decode(r.PRO_TIME || ''),
+        fee: decode(r.USE_FEE || ''), source: detailUrl || links[0]?.url || '',
+      });
+    }
+    if (from + 999 >= body.list_total_count) break;
+    await sleep(DELAY);
+  }
+  return out;
+}
+
+function addNew(list, label) {
+  const titles = new Set(all.map((e) => key(e.title)));
+  const fresh = list.filter((e) => {
+    if (e.end < today || /온라인/.test(e.title)) return false;
+    const k = key(e.title);
+    if (!k || titles.has(k)) return false;
+    const same = all.some((o) => o.start === e.start && o.end === e.end
+      && (key(o.title).includes(k) || k.includes(key(o.title))));
+    if (same) return false;
+    titles.add(k);
+    return true;
+  });
+  all.push(...fresh);
+  console.log(`${label}: 받은 ${list.length}건, 새로 추가 ${fresh.length}건`);
+  return fresh;
+}
+
+if (process.env.SEOUL_API_KEY) {
+  try { addNew(await seoulApi(process.env.SEOUL_API_KEY), '서울 API'); }
+  catch (e) { console.warn('서울 API 실패', e.message.replaceAll(process.env.SEOUL_API_KEY, '***')); }
+}
+if (process.env.CULTURE_API_KEY) {
+  const apiKey = process.env.CULTURE_API_KEY;
+  try {
+    const fresh = addNew(await cultureApi(apiKey), '한눈에 API');
+    for (const e of fresh) {
+      try { Object.assign(e, await cultureDetail(apiKey, e)); } catch { /* 목록 정보만 사용 */ }
+      delete e.seq;
+    }
+  } catch (e) { console.warn('한눈에 API 실패', e.message.replaceAll(apiKey, '***')); }
+}
+all = all.sort((a, b) => a.end.localeCompare(b.end));
 
 // 티켓 판매처로 연결되는 링크는 '예매'로 표시하고, 전시가 아닌 공고는 뺀다.
 const TICKET = /interpark|nol.yanolja|nol.com|ticketlink|yes24|melon|booking.|booking.naver|timeticket|ticket/i;
