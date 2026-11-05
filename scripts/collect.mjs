@@ -178,7 +178,7 @@ const isoDate = (s = '') => {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 };
 const xmlTags = (xml) => Object.fromEntries([...xml.matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g)]
-  .map((m) => [m[1], decode(m[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'))]));
+  .map((m) => [m[1], decode(decode(m[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')))]));
 
 async function cultureApi(apiKey) {
   const k = apiKey.includes('%') ? apiKey : encodeURIComponent(apiKey);
@@ -278,6 +278,9 @@ if (process.env.CULTURE_API_KEY) {
     }
   } catch (e) { console.warn('한눈에 API 실패', e.message.replaceAll(apiKey, '***')); }
 }
+// 원본 자료가 전남 전시를 '광주'로 묶어 두는 경우가 있어 지명으로 바로잡는다.
+const JEONNAM = /전남|전라남도|목포|여수|순천|나주|광양|담양|곡성|구례|고흥|보성|화순|장흥|강진|해남|영암|무안|함평|영광|장성|완도|진도|신안/;
+for (const e of all) if (e.region === '광주' && JEONNAM.test(`${e.place} ${e.title}`)) e.region = '전남';
 all = all.sort((a, b) => a.end.localeCompare(b.end));
 
 // 티켓 판매처로 연결되는 링크는 '예매'로 표시하고, 전시가 아닌 공고는 뺀다.
