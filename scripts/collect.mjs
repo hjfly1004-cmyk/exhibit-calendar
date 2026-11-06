@@ -288,7 +288,7 @@ const textKey = process.env.CULTURE_API_KEY;
 let textNew = 0, textFail = 0, textLogged = false;
 for (const e of all) {
   if (e.text !== undefined) {
-    texts[e.id] = { d: (e.desc || '').slice(0, 400), t: decode(e.text).slice(0, 1500) };
+    texts[e.id] = { ...texts[e.id], d: (e.desc || '').slice(0, 400), t: decode(e.text).slice(0, 1500) };
     delete e.text;
     delete e.desc;
     continue;
@@ -309,6 +309,100 @@ for (const e of all) {
     await sleep(120);
   } catch { textFail++; }
 }
+// 소개글이 없는 전시는 공식 페이지에서 보충한다. robots.txt가 막은 곳은 읽지 않고, 한 번 읽은 곳은 다시 읽지 않는다.
+const SKIP_HOST = /(^|\.)(naver\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|culture\.go\.kr|kakao\.com|interpark\.com|ticketlink\.co\.kr)$/;
+const robotsCache = new Map();
+
+async function quickFetch(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+  const buf = await res.arrayBuffer();
+  const head = new TextDecoder('latin1').decode(buf.slice(0, 2048));
+  const charset = (res.headers.get('content-type') || '').match(/charset=([\w-]+)/i)?.[1]
+    || head.match(/charset=["']?([\w-]+)/i)?.[1] || 'utf-8';
+  let text;
+  try { text = new TextDecoder(charset).decode(buf); } catch { text = new TextDecoder().decode(buf); }
+  return { status: res.status, type: res.headers.get('content-type') || '', text };
+}
+
+function robotsAllows(txt, path) {
+  let active = false, seenRule = false;
+  const rules = [];
+  for (const raw of txt.split(/\r?\n/)) {
+    const m = raw.replace(/#.*/, '').trim().match(/^([\w-]+)\s*:\s*(.*)$/);
+    if (!m) continue;
+    const name = m[1].toLowerCase(), value = m[2].trim();
+    if (name === 'user-agent') {
+      if (seenRule) { active = false; seenRule = false; }
+      if (value === '*') active = true;
+    } else if (name === 'allow' || name === 'disallow') {
+      seenRule = true;
+      if (active && value) rules.push({ allow: name === 'allow', value });
+    }
+  }
+  const matches = (v) => new RegExp('^' + v.replace(/[.+?^{}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')).test(path);
+  const hit = rules.filter((r) => matches(r.value)).sort((a, b) => b.value.length - a.value.length)[0];
+  return !hit || hit.allow;
+}
+
+async function mayRead(u) {
+  if (!robotsCache.has(u.origin)) {
+    let txt = '';
+    try {
+      const r = await quickFetch(u.origin + '/robots.txt');
+      if (r.status >= 500 || r.status === 401 || r.status === 403) txt = 'User-agent: *\nDisallow: /';
+      else if (r.status === 200 && !/html/i.test(r.type)) txt = r.text;
+    } catch { txt = 'User-agent: *\nDisallow: /'; }
+    robotsCache.set(u.origin, txt);
+  }
+  return robotsAllows(robotsCache.get(u.origin), u.pathname + u.search);
+}
+
+function pageText(html, title) {
+  const meta = decode(html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']*)/i)?.[1] || '');
+  const body = decode(html.replace(/<(script|style|nav|header|footer|noscript)\b[\s\S]*?<\/\1>/gi, ' '));
+  const probe = title.replace(/^(\s*\[[^\]]*\]\s*)+/, '').slice(0, 10);
+  const at = probe.length >= 4 ? body.indexOf(probe) : -1;
+  return { meta, window: at >= 0 ? body.slice(at, at + 800) : '' };
+}
+
+const webStat = { read: 0, blocked: 0, failed: 0, found: 0 };
+const metaSeen = new Map();
+let webBudget = 260;
+for (const e of all) {
+  const info = texts[e.id] ||= {};
+  if (info.wt || info.d || webBudget <= 0) continue;
+  const link = e.links.find((l) => !/예매/.test(l.label)) || e.links[0];
+  if (!link) continue;
+  let u;
+  try { u = new URL(link.url); } catch { continue; }
+  if (SKIP_HOST.test(u.hostname)) { info.wt = 3; continue; }
+  webBudget--;
+  try {
+    if (!await mayRead(u)) { info.wt = 2; webStat.blocked++; continue; }
+    const r = await quickFetch(u.href);
+    info.wt = 1;
+    if (r.status !== 200 || !/html/i.test(r.type)) { webStat.failed++; continue; }
+    webStat.read++;
+    const p = pageText(r.text, e.title);
+    info.w = p.window;
+    if (p.window) webStat.found++;
+    if (p.meta.length > 40) {
+      const k = u.hostname + '|' + p.meta;
+      if (!metaSeen.has(k)) metaSeen.set(k, { meta: p.meta, ids: [] });
+      metaSeen.get(k).ids.push(e.id);
+    }
+  } catch { webStat.failed++; }
+  await sleep(300);
+}
+// 같은 사이트의 여러 전시에 똑같이 붙은 설명은 사이트 소개문이므로 쓰지 않는다.
+for (const { meta, ids } of metaSeen.values()) {
+  if (ids.length > 1) continue;
+  const info = texts[ids[0]];
+  info.w = ((info.w || '') + ' ' + meta).trim();
+  info.d = meta.slice(0, 200);
+}
+console.log('공식 페이지', JSON.stringify(webStat));
+
 const liveIds = new Set(all.map((e) => e.id));
 texts = Object.fromEntries(Object.entries(texts).filter(([id]) => liveIds.has(id)));
 await mkdir(new URL('../data/', import.meta.url), { recursive: true });
@@ -346,8 +440,10 @@ const finished = all.filter((e) => !NOTICE.test(e.title)).map((e) => {
   const links = e.links.map((l) => (TICKET.test(l.url) ? { ...l, label: '예매 바로가기' } : l));
   const { detailPlace, ...rest } = e;
   const info = texts[e.id] || {};
-  const body = e.title + ' ' + (info.t || '');
-  const tags = TAGS.filter(([, re]) => re.test(body)).map(([n]) => n);
+  const base = e.title + ' ' + (info.t || '');
+  const body = base + ' ' + (info.w || '');
+  // 사이트 메뉴의 '어린이' 같은 단어에 끌려가지 않도록 이 분류는 제목과 공식 자료만 본다.
+  const tags = TAGS.filter(([n, re]) => re.test(n === '어린이·가족' ? base : body)).map(([n]) => n);
   return { ...rest, links, desc: info.d || '', tags, art: ART.test(text) || !OTHER.test(text) };
 });
 await writeFile(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), items: finished, detailCache: undefined }));
