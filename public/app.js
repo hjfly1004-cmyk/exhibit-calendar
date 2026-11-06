@@ -11,14 +11,12 @@ const dayDiff = (a, b) => Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}
 const shortDate = (s) => { const [y, m, d] = s.split('-'); return `${y}.${+m}.${+d}`; };
 const monthDay = (s) => { const [, m, d] = s.split('-'); return `${+m}월 ${+d}일`; };
 
-const TAG_ORDER = ['현대미술', '동양·한국미술', '서양미술', '근대·고미술', '회화', '사진', '조각·설치', '미디어아트', '공예·도자', '판화·드로잉', '디자인·건축', '어린이·가족'];
-
 function loadFavs() {
   try { return new Set(JSON.parse(localStorage.getItem('favs') || '[]')); } catch { return new Set(); }
 }
 
 const state = {
-  favs: loadFavs(), tag: '전체', base: [], fresh: false, freshIds: new Set(),
+  favs: loadFavs(), base: [], fresh: false, freshIds: new Set(),
   items: [], region: '전국', query: '', free: false, museum: false,
   year: new Date().getFullYear(), month: new Date().getMonth(),
   selected: TODAY, tab: 'day', shown: PAGE,
@@ -32,7 +30,6 @@ function filtered() {
   return state.items.filter((e) => {
     if (state.region !== '전국' && e.region !== state.region) return false;
     if (state.fresh && !state.freshIds.has(e.id)) return false;
-    if (state.tag !== '전체' && !e.tags?.includes(state.tag)) return false;
     if (state.free && !e.free) return false;
     if (!state.museum && !e.art) return false;
     return !q || `${e.title} ${e.place}`.toLowerCase().includes(q);
@@ -296,12 +293,6 @@ function openSheet(e) {
   }
 
   sheet.append(close, head);
-  if (e.tags?.length) {
-    const t = document.createElement('p');
-    t.className = 'tag-row';
-    t.textContent = e.tags.map((x) => `#${x}`).join(' ');
-    sheet.append(t);
-  }
   if (e.desc) {
     const p = document.createElement('p');
     p.className = 'desc';
@@ -414,7 +405,7 @@ function openForm() {
       id, title: title.value.trim(), start: start.value, end: end.value,
       place: place.value.trim(), region: region.value, free: false, phone: '', image: '',
       links: url ? [{ label: '공식 홈페이지', url }] : [], hours: '', fee: '', source: '',
-      desc: '', tags: [], art: true, mine: true,
+      desc: '', art: true, mine: true,
     };
     saveMine([...loadMine(), item]);
     state.favs.add(id);
@@ -527,27 +518,6 @@ function bindExtras() {
   }
 }
 
-function renderTagChips() {
-  const box = $('tags');
-  box.replaceChildren();
-  const used = TAG_ORDER.filter((t) => state.items.some((e) => e.tags?.includes(t)));
-  if (!used.length) return;
-  for (const t of ['전체', ...used]) {
-    const c = document.createElement('button');
-    c.type = 'button';
-    c.className = 'chip';
-    c.textContent = t === '전체' ? '전체 분류' : t;
-    c.setAttribute('aria-pressed', String(t === state.tag));
-    c.addEventListener('click', () => {
-      state.tag = t;
-      state.shown = PAGE;
-      box.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)));
-      render();
-    });
-    box.append(c);
-  }
-}
-
 function bindUi() {
   const regions = $('regions');
   for (const r of REGIONS) {
@@ -621,7 +591,6 @@ async function load() {
     const when = new Date(data.updatedAt);
     const old = (Date.now() - when) / 864e5 > 3;
     $('updated').textContent = `${when.getMonth() + 1}/${when.getDate()} ${pad(when.getHours())}:${pad(when.getMinutes())} 기준 · ${state.items.length}건${old ? ' · 오래된 정보일 수 있어요' : ''}`;
-    renderTagChips();
     render();
   } catch {
     $('updated').textContent = '전시 정보를 불러오지 못했어요';
