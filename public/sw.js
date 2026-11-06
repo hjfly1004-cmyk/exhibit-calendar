@@ -1,4 +1,4 @@
-const CACHE = 'exhibit-v3';
+const CACHE = 'exhibit-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'data/exhibitions.json', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

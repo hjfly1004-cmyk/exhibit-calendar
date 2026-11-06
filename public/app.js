@@ -11,7 +11,14 @@ const dayDiff = (a, b) => Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}
 const shortDate = (s) => { const [y, m, d] = s.split('-'); return `${y}.${+m}.${+d}`; };
 const monthDay = (s) => { const [, m, d] = s.split('-'); return `${+m}월 ${+d}일`; };
 
+const TAG_ORDER = ['현대미술', '동양·한국미술', '서양미술', '근대·고미술', '회화', '사진', '조각·설치', '미디어아트', '공예·도자', '판화·드로잉', '디자인·건축', '어린이·가족'];
+
+function loadFavs() {
+  try { return new Set(JSON.parse(localStorage.getItem('favs') || '[]')); } catch { return new Set(); }
+}
+
 const state = {
+  favs: loadFavs(), tag: '전체',
   items: [], region: '전국', query: '', free: false, ticket: false, museum: false,
   year: new Date().getFullYear(), month: new Date().getMonth(),
   selected: TODAY, tab: 'day', shown: PAGE,
@@ -24,11 +31,19 @@ function filtered() {
   const q = state.query.trim().toLowerCase();
   return state.items.filter((e) => {
     if (state.region !== '전국' && e.region !== state.region) return false;
+    if (state.tag !== '전체' && !e.tags?.includes(state.tag)) return false;
     if (state.free && !e.free) return false;
     if (state.ticket && !ticketLink(e)) return false;
     if (!state.museum && !e.art) return false;
     return !q || `${e.title} ${e.place}`.toLowerCase().includes(q);
   });
+}
+
+function toggleFav(id) {
+  if (state.favs.has(id)) state.favs.delete(id);
+  else state.favs.add(id);
+  localStorage.setItem('favs', JSON.stringify([...state.favs]));
+  render();
 }
 
 function badge(e) {
@@ -81,6 +96,12 @@ function renderCalendar(items) {
     btn.append(n);
     if (x.start) btn.append(mark('start', `시작${x.start}`));
     if (x.end) btn.append(mark('end', `마감${x.end}`));
+    if (state.items.some((e) => state.favs.has(e.id) && (e.start === x.ymd || e.end === x.ymd))) {
+      const star = document.createElement('span');
+      star.className = 'fav-mark';
+      star.textContent = '★';
+      btn.append(star);
+    }
     btn.addEventListener('click', () => {
       state.selected = x.ymd;
       state.tab = 'day';
@@ -99,6 +120,10 @@ function mark(cls, text) {
 }
 
 function listFor(items) {
+  if (state.tab === 'fav') {
+    const rows = state.items.filter((e) => state.favs.has(e.id)).sort((a, b) => a.end.localeCompare(b.end));
+    return { rows, title: '관심 전시 · 마감이 가까운 순서', empty: '전시 목록의 ☆를 누르면 여기에 모여요.' };
+  }
   if (state.tab === 'ending') {
     return { rows: items.filter((e) => e.start <= TODAY).sort((a, b) => a.end.localeCompare(b.end)), title: '끝나는 날이 가까운 순서' };
   }
@@ -114,7 +139,7 @@ function listFor(items) {
 }
 
 function renderList(items) {
-  const { rows, title } = listFor(items);
+  const { rows, title, empty } = listFor(items);
   document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === state.tab)));
   document.querySelector('[data-tab="day"]').textContent = monthDay(state.selected);
   $('listTitle').textContent = `${title} · ${rows.length}건`;
@@ -123,7 +148,7 @@ function renderList(items) {
   if (!rows.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = '조건에 맞는 전시가 없어요. 필터를 바꿔 보세요.';
+    li.textContent = empty || '조건에 맞는 전시가 없어요. 필터를 바꿔 보세요.';
     list.append(li);
   }
   for (const e of rows.slice(0, state.shown)) list.append(listItem(e));
@@ -162,7 +187,15 @@ function listItem(e) {
   }
   btn.append(body);
   btn.addEventListener('click', () => openSheet(e));
-  li.append(btn);
+  const star = document.createElement('button');
+  star.type = 'button';
+  star.className = 'star';
+  const on = state.favs.has(e.id);
+  star.textContent = on ? '★' : '☆';
+  star.setAttribute('aria-pressed', String(on));
+  star.setAttribute('aria-label', `${e.title} 즐겨찾기`);
+  star.addEventListener('click', () => toggleFav(e.id));
+  li.append(btn, star);
   return li;
 }
 
@@ -240,7 +273,32 @@ function openSheet(e) {
   if (e.place) actions.append(action('지도에서 찾기', `https://map.naver.com/p/search/${encodeURIComponent(e.mapQuery || e.place)}`));
   if (e.source && e.source !== home?.url) actions.append(action('상세 정보 원문', e.source));
 
-  sheet.append(close, head, facts, actions);
+  const favBtn = document.createElement('button');
+  favBtn.type = 'button';
+  favBtn.className = 'action fav';
+  const paint = () => {
+    const on = state.favs.has(e.id);
+    favBtn.textContent = on ? '★ 관심 전시에서 빼기' : '☆ 관심 전시에 담기';
+    favBtn.setAttribute('aria-pressed', String(on));
+  };
+  paint();
+  favBtn.addEventListener('click', () => { toggleFav(e.id); paint(); });
+  actions.prepend(favBtn);
+
+  sheet.append(close, head);
+  if (e.tags?.length) {
+    const t = document.createElement('p');
+    t.className = 'tag-row';
+    t.textContent = e.tags.map((x) => `#${x}`).join(' ');
+    sheet.append(t);
+  }
+  if (e.desc) {
+    const p = document.createElement('p');
+    p.className = 'desc';
+    p.textContent = e.desc;
+    sheet.append(p);
+  }
+  sheet.append(facts, actions);
   sheet.hidden = false;
   $('sheetBack').hidden = false;
   sheet.scrollTop = 0;
@@ -263,6 +321,27 @@ function moveMonth(step) {
   state.year = d.getFullYear();
   state.month = d.getMonth();
   render();
+}
+
+function renderTagChips() {
+  const box = $('tags');
+  box.replaceChildren();
+  const used = TAG_ORDER.filter((t) => state.items.some((e) => e.tags?.includes(t)));
+  if (!used.length) return;
+  for (const t of ['전체', ...used]) {
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.className = 'chip';
+    c.textContent = t === '전체' ? '전체 분류' : t;
+    c.setAttribute('aria-pressed', String(t === state.tag));
+    c.addEventListener('click', () => {
+      state.tag = t;
+      state.shown = PAGE;
+      box.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)));
+      render();
+    });
+    box.append(c);
+  }
 }
 
 function bindUi() {
@@ -336,6 +415,7 @@ async function load() {
     const when = new Date(data.updatedAt);
     const old = (Date.now() - when) / 864e5 > 3;
     $('updated').textContent = `${when.getMonth() + 1}/${when.getDate()} ${pad(when.getHours())}:${pad(when.getMinutes())} 기준 · ${state.items.length}건${old ? ' · 오래된 정보일 수 있어요' : ''}`;
+    renderTagChips();
     render();
   } catch {
     $('updated').textContent = '전시 정보를 불러오지 못했어요';

@@ -25,6 +25,7 @@
   <section class="filters" aria-label="전시 필터">
     <input id="search" type="search" placeholder="전시명, 작가, 장소 검색" autocomplete="off" enterkeyhint="search">
     <div id="regions" class="chips" role="group" aria-label="지역"></div>
+    <div id="tags" class="chips" role="group" aria-label="미술 분류"></div>
     <div class="chips" role="group" aria-label="조건">
       <button class="chip toggle" data-toggle="free" type="button" aria-pressed="false">무료</button>
       <button class="chip toggle" data-toggle="ticket" type="button" aria-pressed="false">예매 가능</button>
@@ -42,7 +43,7 @@
       <span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span>
     </div>
     <div id="grid" class="grid"></div>
-    <p class="legend"><span class="mark start">시작3</span> 그날 시작하는 전시 3건 · <span class="mark end">마감2</span> 그날 끝나는 전시 2건 · 칸이 진할수록 볼 수 있는 전시가 많아요</p>
+    <p class="legend"><span class="mark start">시작3</span> 그날 시작하는 전시 3건 · <span class="mark end">마감2</span> 그날 끝나는 전시 2건 · <b class="fav-mark">★</b> 관심 전시의 시작·마감일 · 칸이 진할수록 볼 수 있는 전시가 많아요</p>
   </section>
 
   <section class="results">
@@ -50,6 +51,7 @@
       <button class="tab" role="tab" data-tab="day" type="button"></button>
       <button class="tab" role="tab" data-tab="ending" type="button">곧 마감</button>
       <button class="tab" role="tab" data-tab="upcoming" type="button">예정 전시</button>
+      <button class="tab" role="tab" data-tab="fav" type="button">★ 관심</button>
     </div>
     <p id="listTitle" class="list-title"></p>
     <ul id="list" class="list"></ul>

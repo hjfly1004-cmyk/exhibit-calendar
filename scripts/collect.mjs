@@ -1,6 +1,6 @@
 // 문화포털 '한눈에 보는 문화정보'의 전시 목록을 모아 public/data/exhibitions.json 으로 저장한다.
 // 상세 페이지는 처음 보는 전시만 읽어 원본 사이트 부담을 줄인다.
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const BASE = 'https://www.culture.go.kr';
 const LIST = `${BASE}/portal/cltInfo/oneCltInfo/oneEyeDetailView.do?viewType=CONTBODY`;
@@ -120,6 +120,7 @@ async function mmca() {
         place: [name, e.exhPlaDtl].filter((x) => x && x !== '-').join(' '),
         phone: '', region, free: e.exhAdm === '0',
         image: e.exhDidImg ? MMCA + e.exhDidImg : '', links, hours: '', mapQuery: name,
+        desc: decode(e.exhContentsSumm || ''), text: [e.exhContentsSumm, e.exhThemewd, e.exhArtist, e.exhTpCd].join(' '),
         fee: e.exhAdm === '0' ? '무료' : (e.exhAdm && e.exhAdm !== '-' ? e.exhAdm : ''), source: page,
       });
     }
@@ -239,6 +240,7 @@ async function seoulApi(apiKey) {
         place: decode(r.PLACE || ''), region: '서울', free: r.IS_FREE === '무료', phone: decode(r.INQUIRY || ''),
         image: (r.MAIN_IMG || '').replace(/^http:/, 'https:'), links, hours: decode(r.PRO_TIME || ''),
         fee: decode(r.USE_FEE || ''), source: detailUrl || links[0]?.url || '',
+        desc: decode(r.ETC_DESC || r.PROGRAM || ''), text: [r.PROGRAM, r.ETC_DESC, r.PLAYER].join(' '),
       });
     }
     if (from + 999 >= body.list_total_count) break;
@@ -278,6 +280,57 @@ if (process.env.CULTURE_API_KEY) {
     }
   } catch (e) { console.warn('한눈에 API 실패', e.message.replaceAll(apiKey, '***')); }
 }
+// 전시 소개글을 모아 둔다. 한 번 받은 글은 저장해 두고 다시 요청하지 않는다.
+const TEXT = new URL('../data/text-cache.json', import.meta.url);
+let texts = {};
+try { texts = JSON.parse(await readFile(TEXT, 'utf8')); } catch { /* 첫 실행 */ }
+const textKey = process.env.CULTURE_API_KEY;
+let textNew = 0, textFail = 0, textLogged = false;
+for (const e of all) {
+  if (e.text !== undefined) {
+    texts[e.id] = { d: (e.desc || '').slice(0, 400), t: decode(e.text).slice(0, 1500) };
+    delete e.text;
+    delete e.desc;
+    continue;
+  }
+  const seq = /^\d+$/.test(e.id) ? e.id : e.id.startsWith('kcisa-') ? e.id.slice(6) : null;
+  if (!seq || !textKey || texts[e.id]) continue;
+  try {
+    const k = textKey.includes('%') ? textKey : encodeURIComponent(textKey);
+    const xml = await get('https://apis.data.go.kr/B553457/cultureinfo/detail2?serviceKey=' + k + '&seq=' + seq);
+    const d = xmlTags(xml.match(/<item>([\s\S]*?)<\/item>/)?.[1] || '');
+    const vals = Object.values(d).filter((v) => v && !/^https?:/.test(v)).sort((a, b) => b.length - a.length);
+    if (!textLogged) {
+      console.log('상세 항목', Object.entries(d).map(([n, v]) => n + ':' + v.length).join(','));
+      textLogged = true;
+    }
+    texts[e.id] = { d: (vals[0] || '').length > 40 ? vals[0].slice(0, 400) : '', t: vals.join(' ').slice(0, 1500) };
+    textNew++;
+    await sleep(120);
+  } catch { textFail++; }
+}
+const liveIds = new Set(all.map((e) => e.id));
+texts = Object.fromEntries(Object.entries(texts).filter(([id]) => liveIds.has(id)));
+await mkdir(new URL('../data/', import.meta.url), { recursive: true });
+await writeFile(TEXT, JSON.stringify(texts));
+console.log('소개글 신규 ' + textNew + '건, 실패 ' + textFail + '건, 보유 ' + Object.keys(texts).length + '건');
+
+// 소개글과 제목의 단어로 분류한다. 한 전시에 여러 분류가 붙을 수 있다.
+const TAGS = [
+  ['현대미술', /현대미술(?!관)|동시대|컨템포러리|contemporary|신진\s?작가|레지던시|입주\s?작가|개념미술/i],
+  ['동양·한국미술', /한국화|동양화|수묵|서예|문인화|민화|산수화|사군자|채색화|진경|서화/],
+  ['서양미술', /서양\s?(미술|화|회화)|유럽\s?(미술|회화)|인상주의|르네상스|프랑스\s?(미술|작가|화가)|모더니즘/],
+  ['근대·고미술', /근대미술|근현대미술|고미술|고서화|조선\s?(시대|회화|백자)|고려청자/],
+  ['회화', /회화|유화|아크릴|캔버스|수채|페인팅|painting/i],
+  ['사진', /사진전|사진\s?작가|사진가|사진\s?작품|포토그래피|photograph/i],
+  ['조각·설치', /조각|설치\s?(미술|작품|작업)|입체|sculpture|installation/i],
+  ['미디어아트', /미디어\s?아트|뉴미디어|영상\s?(작품|설치|미술)|미디어\s?(작품|설치)|video art|디지털\s?아트/i],
+  ['공예·도자', /공예|도자|도예|섬유|금속\s?(공예|작품)|옻칠|유리\s?작품/],
+  ['판화·드로잉', /판화|드로잉|일러스트|drawing/i],
+  ['디자인·건축', /디자인전|건축전|건축가|그래픽\s?디자인/],
+  ['어린이·가족', /어린이|가족|그림책/],
+];
+
 // 원본 자료가 전남 전시를 '광주'로 묶어 두는 경우가 있어 지명으로 바로잡는다.
 const JEONNAM = /전남|전라남도|목포|여수|순천|나주|광양|담양|곡성|구례|고흥|보성|화순|장흥|강진|해남|영암|무안|함평|영광|장성|완도|진도|신안/;
 for (const e of all) if (e.region === '광주' && JEONNAM.test(`${e.place} ${e.title}`)) e.region = '전남';
@@ -292,8 +345,14 @@ const finished = all.filter((e) => !NOTICE.test(e.title)).map((e) => {
   const text = `${e.title} ${e.place}`;
   const links = e.links.map((l) => (TICKET.test(l.url) ? { ...l, label: '예매 바로가기' } : l));
   const { detailPlace, ...rest } = e;
-  return { ...rest, links, art: ART.test(text) || !OTHER.test(text) };
+  const info = texts[e.id] || {};
+  const body = e.title + ' ' + (info.t || '');
+  const tags = TAGS.filter(([, re]) => re.test(body)).map(([n]) => n);
+  return { ...rest, links, desc: info.d || '', tags, art: ART.test(text) || !OTHER.test(text) };
 });
 await writeFile(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), items: finished, detailCache: undefined }));
 const up = finished.filter((e) => e.start > today).length;
+const tagCount = {};
+finished.forEach((e) => e.tags.forEach((t) => { tagCount[t] = (tagCount[t] || 0) + 1; }));
+console.log('분류', JSON.stringify(tagCount), '미분류', finished.filter((e) => !e.tags.length).length);
 console.log(`저장 ${finished.length}건 (예정 ${up}, 국립현대미술관 ${official.length}, 상세 신규 ${fetched}, 실패 ${failed})`);
