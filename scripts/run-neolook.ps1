@@ -1,4 +1,5 @@
 # Daily task: read the Neolook list on this PC and push data/neolook.json to GitHub.
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 Set-Location (Split-Path $PSScriptRoot -Parent)
 $log = Join-Path (Get-Location) 'neolook.log'
 function Run-Step([string]$name, [scriptblock]$step) {
