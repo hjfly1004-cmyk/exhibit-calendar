@@ -27,6 +27,7 @@
     <div id="regions" class="chips" role="group" aria-label="지역"></div>
     <div id="tags" class="chips" role="group" aria-label="미술 분류"></div>
     <div class="chips" role="group" aria-label="조건">
+      <button id="freshChip" class="chip toggle" data-toggle="fresh" type="button" aria-pressed="false" hidden>새 전시</button>
       <button class="chip toggle" data-toggle="free" type="button" aria-pressed="false">무료</button>
       <button class="chip toggle" data-toggle="museum" type="button" aria-pressed="false">박물관 전시 포함</button>
     </div>
@@ -44,6 +45,12 @@
     <div id="grid" class="grid"></div>
     <p class="legend"><span class="mark start">시작3</span> 그날 시작하는 전시 3건 · <span class="mark end">마감2</span> 그날 끝나는 전시 2건 · <b class="fav-mark">★</b> 관심 전시의 시작·마감일 · 칸이 진할수록 볼 수 있는 전시가 많아요</p>
   </section>
+
+  <div class="tools">
+    <button id="addBtn" type="button">＋ 전시 직접 추가</button>
+    <button id="naverBtn" type="button">네이버 전시 보기</button>
+    <button id="alertBtn" class="wide" type="button">🔔 새 전시 알림 켜기</button>
+  </div>
 
   <section class="results">
     <div class="tabs" role="tablist">

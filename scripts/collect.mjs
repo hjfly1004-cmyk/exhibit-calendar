@@ -256,7 +256,8 @@ function addNew(list, label) {
     const k = key(e.title);
     if (!k || titles.has(k)) return false;
     const same = all.some((o) => o.start === e.start && o.end === e.end
-      && (key(o.title).includes(k) || k.includes(key(o.title))));
+      && (key(o.title).includes(k) || k.includes(key(o.title))
+        || (key(e.place).length > 1 && key(o.place).includes(key(e.place)))));
     if (same) return false;
     titles.add(k);
     return true;
@@ -265,6 +266,48 @@ function addNew(list, label) {
   console.log(`${label}: 받은 ${list.length}건, 새로 추가 ${fresh.length}건`);
   return fresh;
 }
+
+// 네오룩 공개 등록 목록: 사립 갤러리 전시와 오픈 예정 전시가 많다.
+// 목록 페이지만 읽고(상세 경로는 robots.txt 금지), 이미 받은 전시는 끝날 때까지 유지한다.
+const placeRegion = new Map(all.filter((e) => e.place && e.region).map((e) => [key(e.place), e.region]));
+const MEDIA = [
+  [/photo/i, '사진 작품'], [/sculpture|object/i, '조각'], [/installation/i, '설치 작품'],
+  [/painting/i, '회화'], [/video|media|new media/i, '미디어 아트'], [/ceramic|craft/i, '공예'],
+  [/drawing/i, '드로잉'], [/print/i, '판화'],
+];
+
+async function neolook() {
+  const html = await get('https://neolook.com/upload-list');
+  const out = [];
+  for (const m of html.matchAll(/<a class="h-15[^"]*" href="\/archives\/(\w+)">([\s\S]*?)<\/a>/g)) {
+    const rows = [...m[2].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((x) => decode(x[1]));
+    const line = rows.find((r) => /▶/.test(r)) || '';
+    const d = line.match(/(20\d\d)_(\d\d)(\d\d)\s*▶\s*(20\d\d)_(\d\d)(\d\d)/);
+    const placeRow = rows.find((r) => r.startsWith('@')) || '';
+    if (!d || !rows[0]) continue;
+    const parts = rows[0].split(' / ').map((x) => x.trim());
+    const sub = rows[1] && rows[1] !== line && !rows[1].startsWith('@') ? rows[1].split(' / ')[0].trim() : '';
+    const place = placeRow.replace(/^@\s*/, '').split('|')[0].trim();
+    const medium = parts.at(-1);
+    const url = 'https://neolook.com/archives/' + m[1];
+    out.push({
+      id: 'neolook-' + m[1],
+      title: sub ? parts[0] + ' · ' + sub : parts[0],
+      start: d[1] + '-' + d[2] + '-' + d[3], end: d[4] + '-' + d[5] + '-' + d[6],
+      place, region: placeRegion.get(key(place)) || normRegion(place) || REGIONS.find((r) => place.includes(r)) || '',
+      free: false, phone: '', image: '', hours: '', fee: '',
+      links: [{ label: '공식 홈페이지', url }], source: url, desc: '',
+      text: '동시대 ' + MEDIA.filter(([re]) => re.test(medium)).map(([, t]) => t).join(' '),
+    });
+  }
+  console.log('네오룩 목록', out.length);
+  const fresh = new Set(out.map((e) => e.id));
+  const kept = [...prev.values()].filter((e) => e.id.startsWith('neolook-') && !fresh.has(e.id));
+  return [...out, ...kept];
+}
+
+try { addNew(await neolook(), '네오룩'); }
+catch (e) { console.warn('네오룩 수집 실패', e.message); }
 
 if (process.env.SEOUL_API_KEY) {
   try { addNew(await seoulApi(process.env.SEOUL_API_KEY), '서울 API'); }
@@ -310,7 +353,7 @@ for (const e of all) {
   } catch { textFail++; }
 }
 // 소개글이 없는 전시는 공식 페이지에서 보충한다. robots.txt가 막은 곳은 읽지 않고, 한 번 읽은 곳은 다시 읽지 않는다.
-const SKIP_HOST = /(^|\.)(naver\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|culture\.go\.kr|kakao\.com|interpark\.com|ticketlink\.co\.kr)$/;
+const SKIP_HOST = /(^|\.)(neolook\.com|naver\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|culture\.go\.kr|kakao\.com|interpark\.com|ticketlink\.co\.kr)$/;
 const robotsCache = new Map();
 
 async function quickFetch(url) {
@@ -413,7 +456,7 @@ console.log('소개글 신규 ' + textNew + '건, 실패 ' + textFail + '건, �
 const TAGS = [
   ['현대미술', /현대미술(?!관)|동시대|컨템포러리|contemporary|신진\s?작가|레지던시|입주\s?작가|개념미술/i],
   ['동양·한국미술', /한국화|동양화|수묵|서예|문인화|민화|산수화|사군자|채색화|진경|서화/],
-  ['서양미술', /서양\s?(미술|화|회화)|유럽\s?(미술|회화)|인상주의|르네상스|프랑스\s?(미술|작가|화가)|모더니즘/],
+  ['서양미술', /서양\s?(미술|화|회화)|유럽\s?(미술|회화)|인상주의|르네상스|프랑스\s?(미술|작가|화가)|(미국|유럽)\s?모더니즘/],
   ['근대·고미술', /근대미술|근현대미술|고미술|고서화|조선\s?(시대|회화|백자)|고려청자/],
   ['회화', /회화|유화|아크릴|캔버스|수채|페인팅|painting/i],
   ['사진', /사진전|사진\s?작가|사진가|사진\s?작품|포토그래피|photograph/i],

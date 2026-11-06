@@ -18,7 +18,7 @@ function loadFavs() {
 }
 
 const state = {
-  favs: loadFavs(), tag: '전체',
+  favs: loadFavs(), tag: '전체', base: [], fresh: false, freshIds: new Set(),
   items: [], region: '전국', query: '', free: false, museum: false,
   year: new Date().getFullYear(), month: new Date().getMonth(),
   selected: TODAY, tab: 'day', shown: PAGE,
@@ -31,6 +31,7 @@ function filtered() {
   const q = state.query.trim().toLowerCase();
   return state.items.filter((e) => {
     if (state.region !== '전국' && e.region !== state.region) return false;
+    if (state.fresh && !state.freshIds.has(e.id)) return false;
     if (state.tag !== '전체' && !e.tags?.includes(state.tag)) return false;
     if (state.free && !e.free) return false;
     if (!state.museum && !e.art) return false;
@@ -285,6 +286,15 @@ function openSheet(e) {
   favBtn.addEventListener('click', () => { toggleFav(e.id); paint(); });
   actions.prepend(favBtn);
 
+  if (e.mine) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'action';
+    del.textContent = '직접 추가한 전시 삭제';
+    del.addEventListener('click', () => removeMine(e.id));
+    actions.append(del);
+  }
+
   sheet.append(close, head);
   if (e.tags?.length) {
     const t = document.createElement('p');
@@ -321,6 +331,200 @@ function moveMonth(step) {
   state.year = d.getFullYear();
   state.month = d.getMonth();
   render();
+}
+
+/* 네이버 등에서 찾은 전시를 이 기기에 직접 추가한다. */
+function loadMine() {
+  try { return JSON.parse(localStorage.getItem('mine') || '[]'); } catch { return []; }
+}
+
+function saveMine(list) {
+  localStorage.setItem('mine', JSON.stringify(list));
+  state.items = [...state.base, ...list.filter((e) => e.end >= TODAY)];
+  render();
+}
+
+function field(labelText, input) {
+  const label = document.createElement('label');
+  label.className = 'field';
+  label.textContent = labelText;
+  label.append(input);
+  return label;
+}
+
+function textInput(type, required, placeholder) {
+  const i = document.createElement('input');
+  i.type = type;
+  i.required = required;
+  if (placeholder) i.placeholder = placeholder;
+  return i;
+}
+
+function openForm() {
+  const sheet = $('sheet');
+  sheet.replaceChildren();
+  const close = document.createElement('button');
+  close.className = 'sheet-close';
+  close.type = 'button';
+  close.textContent = '×';
+  close.setAttribute('aria-label', '닫기');
+  close.addEventListener('click', () => history.back());
+
+  const h = document.createElement('h3');
+  h.id = 'sheetTitle';
+  h.textContent = '전시 직접 추가';
+  const note = document.createElement('p');
+  note.className = 'tag-row';
+  note.textContent = '이 휴대폰의 달력과 관심 목록에 저장돼요.';
+
+  const form = document.createElement('form');
+  form.className = 'form';
+  const title = textInput('text', true, '예: 변대용 개인전');
+  const start = textInput('date', true);
+  const end = textInput('date', true);
+  const place = textInput('text', true, '예: 스페이스 하이');
+  const link = textInput('url', false, 'https://');
+  const region = document.createElement('select');
+  for (const r of REGIONS.slice(1)) region.add(new Option(r, r));
+  region.value = state.region === '전국' ? '서울' : state.region;
+  const error = document.createElement('p');
+  error.className = 'form-error';
+  error.hidden = true;
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'action primary';
+  submit.textContent = '추가하기';
+  form.append(field('전시명', title), field('시작일', start), field('종료일', end), field('장소', place), field('지역', region), field('안내 링크 (없어도 돼요)', link), error, submit);
+
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (end.value < start.value) {
+      error.textContent = '종료일은 시작일보다 빠를 수 없어요.';
+      error.hidden = false;
+      return;
+    }
+    if (end.value < TODAY) {
+      error.textContent = '이미 끝난 전시는 달력에 표시되지 않아요.';
+      error.hidden = false;
+      return;
+    }
+    const url = /^https?:\/\//i.test(link.value) ? link.value : '';
+    const id = 'my-' + Date.now();
+    const item = {
+      id, title: title.value.trim(), start: start.value, end: end.value,
+      place: place.value.trim(), region: region.value, free: false, phone: '', image: '',
+      links: url ? [{ label: '공식 홈페이지', url }] : [], hours: '', fee: '', source: '',
+      desc: '', tags: [], art: true, mine: true,
+    };
+    saveMine([...loadMine(), item]);
+    state.favs.add(id);
+    localStorage.setItem('favs', JSON.stringify([...state.favs]));
+    state.tab = 'fav';
+    state.shown = PAGE;
+    render();
+    history.back();
+  });
+
+  sheet.append(close, h, note, form);
+  sheet.hidden = false;
+  $('sheetBack').hidden = false;
+  sheet.scrollTop = 0;
+  history.pushState({ sheet: true }, '');
+}
+
+function removeMine(id) {
+  saveMine(loadMine().filter((e) => e.id !== id));
+  state.favs.delete(id);
+  localStorage.setItem('favs', JSON.stringify([...state.favs]));
+  render();
+  history.back();
+}
+
+/* 지난번 방문 뒤 새로 올라온 전시를 표시하고, 백그라운드 알림이 비교할 목록을 저장한다. */
+function markFresh(ids) {
+  const now = Date.now();
+  let seen = null, recent = {};
+  try {
+    seen = JSON.parse(localStorage.getItem('seenIds') || 'null');
+    recent = JSON.parse(localStorage.getItem('freshMap') || '{}');
+  } catch { /* 처음부터 다시 기록 */ }
+  if (seen) {
+    const old = new Set(seen);
+    for (const id of ids) if (!old.has(id)) recent[id] = now;
+  }
+  const alive = new Set(ids);
+  for (const [id, at] of Object.entries(recent)) {
+    if (!alive.has(id) || now - at > 7 * 864e5) delete recent[id];
+  }
+  localStorage.setItem('seenIds', JSON.stringify(ids));
+  localStorage.setItem('freshMap', JSON.stringify(recent));
+  state.freshIds = new Set(Object.keys(recent));
+  const chip = $('freshChip');
+  chip.hidden = !state.freshIds.size;
+  chip.textContent = '새 전시 ' + state.freshIds.size;
+  if ('caches' in window) {
+    caches.open('exhibit-state').then((c) => c.put('state-seen', new Response(JSON.stringify(ids))));
+  }
+}
+
+const ALERT_TAG = 'new-exhibits';
+
+function paintAlert(text) {
+  $('alertBtn').textContent = text;
+}
+
+async function toggleAlert() {
+  const stored = localStorage.getItem('alertRegion');
+  const reg = await navigator.serviceWorker?.ready;
+  if (stored) {
+    await reg?.periodicSync?.unregister(ALERT_TAG);
+    localStorage.removeItem('alertRegion');
+    paintAlert('🔔 새 전시 알림 켜기');
+    return;
+  }
+  if (!('Notification' in window) || !reg) {
+    paintAlert('이 브라우저는 알림을 지원하지 않아요');
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    paintAlert('알림이 차단됐어요. 앱 설정에서 허용해 주세요');
+    return;
+  }
+  if (!('periodicSync' in reg)) {
+    paintAlert('이 기기는 앱을 열 때만 새 전시가 표시돼요');
+    return;
+  }
+  try {
+    await reg.periodicSync.register(ALERT_TAG, { minInterval: 12 * 3600e3 });
+  } catch {
+    paintAlert('설치한 앱에서 다시 눌러 주세요');
+    return;
+  }
+  localStorage.setItem('alertRegion', state.region);
+  const c = await caches.open('exhibit-state');
+  await c.put('state-alert', new Response(JSON.stringify({ region: state.region })));
+  paintAlert('🔕 알림 끄기 (' + state.region + ')');
+  reg.showNotification('새 전시 알림을 켰어요', {
+    body: state.region + ' 지역에 오픈 예정 전시가 새로 올라오면 알려 드려요.',
+    icon: 'icons/icon-192.png', tag: 'alert-on',
+  });
+}
+
+function bindExtras() {
+  $('addBtn').addEventListener('click', openForm);
+  $('alertBtn').addEventListener('click', toggleAlert);
+  $('naverBtn').addEventListener('click', () => {
+    const q = (state.region === '전국' ? '' : state.region + ' ') + '전시';
+    window.open('https://search.naver.com/search.naver?query=' + encodeURIComponent(q), '_blank', 'noopener');
+  });
+  const region = localStorage.getItem('alertRegion');
+  if (region) paintAlert('🔕 알림 끄기 (' + region + ')');
+  if (new URLSearchParams(location.search).has('fresh')) {
+    state.fresh = true;
+    state.tab = 'upcoming';
+    $('freshChip').setAttribute('aria-pressed', 'true');
+  }
 }
 
 function renderTagChips() {
@@ -411,7 +615,9 @@ async function load() {
     const res = await fetch('data/exhibitions.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
-    state.items = data.items.filter((e) => e.end >= TODAY);
+    state.base = data.items.filter((e) => e.end >= TODAY);
+    state.items = [...state.base, ...loadMine().filter((e) => e.end >= TODAY)];
+    markFresh(data.items.map((e) => e.id));
     const when = new Date(data.updatedAt);
     const old = (Date.now() - when) / 864e5 > 3;
     $('updated').textContent = `${when.getMonth() + 1}/${when.getDate()} ${pad(when.getHours())}:${pad(when.getMinutes())} 기준 · ${state.items.length}건${old ? ' · 오래된 정보일 수 있어요' : ''}`;
@@ -473,6 +679,7 @@ function setupInstall() {
 }
 
 bindUi();
+bindExtras();
 load();
 if (!setupInAppGate()) setupInstall();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
