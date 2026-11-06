@@ -46,7 +46,7 @@ function parseCard(block) {
   if (!id) return null;
   const img = block.match(/<img src="([^"]+)"\s+alt="([^"]*)"/);
   const tags = [...block.matchAll(/<li class="tag[^"]*">\s*<span class="txt">\s*([^<]*?)\s*<\/span>/g)].map((m) => decode(m[1]));
-  const title = decode(block.match(/class="tit[^"]*">\s*<a[^>]*>([\s\S]*?)<\/a>/)?.[1]);
+  const title = decode(decode(block.match(/class="tit[^"]*">\s*<a[^>]*>([\s\S]*?)<\/a>/)?.[1]));
   let [start, end] = parseDates(field(block, '기간'));
   if (!start) [start, end] = parseDates(decode(img?.[2]));
   return {

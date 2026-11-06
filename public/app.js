@@ -271,6 +271,7 @@ function openSheet(e) {
   if (ticket) actions.append(action('예매하기', ticket.url, 'primary'));
   if (home) actions.append(action('전시 안내 사이트', home.url, ticket ? 'dark' : 'primary'));
   if (e.place) actions.append(action('지도에서 찾기', `https://map.naver.com/p/search/${encodeURIComponent(e.mapQuery || e.place)}`));
+  actions.append(action('네이버에서 찾아보기', `https://search.naver.com/search.naver?query=${encodeURIComponent(`${e.title} 전시`)}`));
   if (e.source && e.source !== home?.url) actions.append(action('상세 정보 원문', e.source));
 
   const favBtn = document.createElement('button');
