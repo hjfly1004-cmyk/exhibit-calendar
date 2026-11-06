@@ -19,7 +19,7 @@ function loadFavs() {
 
 const state = {
   favs: loadFavs(), tag: '전체',
-  items: [], region: '전국', query: '', free: false, ticket: false, museum: false,
+  items: [], region: '전국', query: '', free: false, museum: false,
   year: new Date().getFullYear(), month: new Date().getMonth(),
   selected: TODAY, tab: 'day', shown: PAGE,
 };
@@ -33,7 +33,6 @@ function filtered() {
     if (state.region !== '전국' && e.region !== state.region) return false;
     if (state.tag !== '전체' && !e.tags?.includes(state.tag)) return false;
     if (state.free && !e.free) return false;
-    if (state.ticket && !ticketLink(e)) return false;
     if (!state.museum && !e.art) return false;
     return !q || `${e.title} ${e.place}`.toLowerCase().includes(q);
   });

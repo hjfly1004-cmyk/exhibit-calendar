@@ -14,7 +14,7 @@ const decode = (s = '') => s
   .replace(/<[^>]*>/g, ' ')
   .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-  .replace(/&#39;|&apos;|&lsquo;|&rsquo;/g, "'").replace(/&ldquo;|&rdquo;/g, '"').replace(/&middot;/g, '·').replace(/&hellip;/g, '…').replace(/&ndash;/g, '–').replace(/&nbsp;/g, ' ')
+  .replace(/&#39;|&apos;|&lsquo;|&rsquo;/g, "'").replace(/&ldquo;|&rdquo;/g, '"').replace(/&middot;/g, '·').replace(/&hellip;/g, '…').replace(/&ndash;/g, '–').replace(/&mdash;/g, '—').replace(/&times;/g, '×').replace(/&nbsp;/g, ' ')
   .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
 async function get(url, init) {
